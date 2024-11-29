@@ -23,6 +23,8 @@
 /* USER CODE BEGIN Includes */
 #include "ssd1306.h"
 #include "ssd1306_tests.h"
+#include "ssd1306_fonts.h"
+#include "string.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,7 +48,9 @@ I2C_HandleTypeDef hi2c1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+uint8_t rx_data;  // Egy karakter fogadására
+char message[256];  // Az üzenet tárolására
+uint8_t idx = 0;   // Az üzenet buffer indexe
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -60,6 +64,44 @@ static void MX_I2C1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == USART2) {
+        if (rx_data == '\n') {  // Újsor karakter: az üzenet vége
+            message[idx] = '\0';  // Nullázás
+            idx = 0;
+
+            // Kijelző paraméterek
+            const int display_width = 128;   // Kijelző szélessége pixelben
+            const int display_height = 64;  // Kijelző magassága pixelben
+
+            // Betűméret paraméterek (Font_16x26 példa)
+            const int font_width = 16;      // Egy karakter szélessége pixelben
+            const int font_height = 26;     // Egy karakter magassága pixelben
+
+            // Szöveg szélességének kiszámítása
+            int text_width = strlen(message) * font_width;
+            int text_height = font_height;
+
+            // Középpont számítása
+            int x_pos = (display_width - text_width) / 2;
+            int y_pos = (display_height - text_height) / 2;
+
+            // Az üzenetet a kijelző közepére írjuk
+            //ssd1306_Clear();
+            ssd1306_SetCursor(x_pos, y_pos);
+            ssd1306_WriteString(message, Font_16x26, White);  // Nagyobb betűméret
+            ssd1306_UpdateScreen();
+        } else {
+            // A karaktert az üzenetbe helyezzük
+            if (idx < sizeof(message) - 1) {  // Ellenőrizzük, hogy van-e még hely
+                message[idx++] = rx_data;
+            }
+        }
+        // Új adat vételének engedélyezése
+        HAL_UART_Receive_IT(&huart2, &rx_data, 1);
+    }
+}
 
 /* USER CODE END 0 */
 
@@ -95,7 +137,9 @@ int main(void)
   MX_USART2_UART_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
-ssd1306_Init();
+  ssd1306_Init();
+  //ssd1306_UpdateScreen();
+  HAL_UART_Receive_IT(&huart2, &rx_data, 1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -103,7 +147,7 @@ ssd1306_Init();
   while (1)
   {
     /* USER CODE END WHILE */
-ssd1306_TestAll();
+
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
