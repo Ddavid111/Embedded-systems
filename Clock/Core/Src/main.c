@@ -45,6 +45,8 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
+TIM_HandleTypeDef htim2;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
@@ -58,6 +60,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -65,43 +68,21 @@ static void MX_I2C1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART2) {
-        if (rx_data == '\n') {  // Újsor karakter: az üzenet vége
-            message[idx] = '\0';  // Nullázás
-            idx = 0;
-
-            // Kijelző paraméterek
-            const int display_width = 128;   // Kijelző szélessége pixelben
-            const int display_height = 64;  // Kijelző magassága pixelben
-
-            // Betűméret paraméterek (Font_16x26 példa)
-            const int font_width = 16;      // Egy karakter szélessége pixelben
-            const int font_height = 26;     // Egy karakter magassága pixelben
-
-            // Szöveg szélességének kiszámítása
-            int text_width = strlen(message) * font_width;
-            int text_height = font_height;
-
-            // Középpont számítása
-            int x_pos = (display_width - text_width) / 2;
-            int y_pos = (display_height - text_height) / 2;
-
-            // Az üzenetet a kijelző közepére írjuk
-            //ssd1306_Clear();
-            ssd1306_SetCursor(x_pos, y_pos);
-            ssd1306_WriteString(message, Font_16x26, White);  // Nagyobb betűméret
-            ssd1306_UpdateScreen();
+        if (rx_data == '\n') {  // Új sor karakter érkezett
+            message[idx] = '\0';  // Nullázás az üzenet végére
+            idx = 0;  // Reseteljük az indexet
         } else {
-            // A karaktert az üzenetbe helyezzük
-            if (idx < sizeof(message) - 1) {  // Ellenőrizzük, hogy van-e még hely
+            if (idx < sizeof(message) - 1) {
                 message[idx++] = rx_data;
             }
         }
-        // Új adat vételének engedélyezése
-        HAL_UART_Receive_IT(&huart2, &rx_data, 1);
+        HAL_UART_Receive_IT(&huart2, &rx_data, 1);  // Új adat fogadása
     }
 }
+
 
 /* USER CODE END 0 */
 
@@ -136,10 +117,11 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_I2C1_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   ssd1306_Init();
-  //ssd1306_UpdateScreen();
   HAL_UART_Receive_IT(&huart2, &rx_data, 1);
+  HAL_TIM_Base_Start_IT(&htim2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -234,6 +216,51 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 8399;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 9999;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -304,6 +331,30 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+    if (htim->Instance == TIM2) {  // Timer 2 megszakítás
+        // Csak akkor frissítjük a kijelzőt, ha van új adat
+        if (strlen(message) > 0) {
+            // Kijelző paraméterek
+            const int display_width = 128;
+            const int display_height = 64;
+            const int font_width = 16;
+            const int font_height = 26;
+
+            int text_width = strlen(message) * font_width;
+            int text_height = font_height;
+
+            int x_pos = (display_width - text_width) / 2;
+            int y_pos = (display_height - text_height) / 2;
+
+            // OLED frissítése
+            ssd1306_Fill(Black);
+            ssd1306_SetCursor(x_pos, y_pos);
+            ssd1306_WriteString(message, Font_16x26, White);
+            ssd1306_UpdateScreen();
+        }
+    }
+}
 
 /* USER CODE END 4 */
 
