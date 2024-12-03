@@ -2,10 +2,23 @@ import serial
 import time
 from datetime import datetime
 
-ser = serial.Serial('COM3', 115200)
+def send_time(port):
+    try:
+        ser = serial.Serial(port, baudrate=115200, timeout=1)
+        print("Kapcsolódva:", ser.name)
+        
+        while True:
+            now = datetime.now()
+            formatted_time = now.strftime("%H:%M:%S %Y.%m.%d")
+            
+            ser.write((formatted_time + '\n').encode())
+            print(f"Elküldve: {formatted_time}")
+            
+            time.sleep(1)  
+    except Exception as e:
+        print("Hiba:", e)
+    finally:
+        ser.close()
+        print("Kapcsolat lezárva.")
 
-while True:
-    current_time = datetime.now().strftime('%H:%M:%S')
-    ser.write((current_time + '\n').encode())
-    print(f"Küldött idő: {current_time}")
-    time.sleep(1)
+send_time("COM6")

@@ -29,7 +29,8 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+#define UART_BUFFER_SIZE 64
+uint8_t uart_rx_buffer[UART_BUFFER_SIZE];
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -45,14 +46,14 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
-TIM_HandleTypeDef htim2;
+RTC_HandleTypeDef hrtc;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-uint8_t rx_data;  // Egy karakter fogadására
-char message[256];  // Az üzenet tárolására
-uint8_t idx = 0;   // Az üzenet buffer indexe
+RTC_TimeTypeDef sTime;
+RTC_DateTypeDef sDate;
+char uart_buffer[UART_BUFFER_SIZE];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -60,26 +61,81 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
-static void MX_TIM2_Init(void);
+static void MX_RTC_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void Display_RTC_Time_Date(void)
+{
+    char time_str[9];
+    char date_str[11];
 
+    HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+    snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", sTime.Hours, sTime.Minutes, sTime.Seconds);
+    snprintf(date_str, sizeof(date_str), "%04d.%02d.%02d", 2000 + sDate.Year, sDate.Month, sDate.Date);
+
+    ssd1306_Fill(Black);
+    ssd1306_SetCursor(0, 0);
+    ssd1306_WriteString("Time:", Font_7x10, White);
+    ssd1306_SetCursor(50, 0);
+    ssd1306_WriteString(time_str, Font_7x10, White);
+
+    ssd1306_SetCursor(0, 20);
+    ssd1306_WriteString("Date:", Font_7x10, White);
+    ssd1306_SetCursor(50, 20);
+    ssd1306_WriteString(date_str, Font_7x10, White);
+
+    ssd1306_UpdateScreen();
+}
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART2) {
-        if (rx_data == '\n') {  // Új sor karakter érkezett
-            message[idx] = '\0';  // Nullázás az üzenet végére
-            idx = 0;  // Reseteljük az indexet
-        } else {
-            if (idx < sizeof(message) - 1) {
-                message[idx++] = rx_data;
-            }
+        Process_UART_Data(uart_rx_buffer);
+        HAL_UART_Receive_IT(&huart2, uart_rx_buffer, UART_BUFFER_SIZE); // Új fogadás
+    }
+}
+
+
+
+
+
+void Process_UART_Data(uint8_t *data)
+{
+    RTC_TimeTypeDef sTime = {0};
+    RTC_DateTypeDef sDate = {0};
+
+    int hours, minutes, seconds;
+    int year, month, day;
+
+    if (sscanf((char *)data, "%d:%d:%d %d.%d.%d", &hours, &minutes, &seconds, &year, &month, &day) == 6)
+    {
+        sTime.Hours = hours;
+        sTime.Minutes = minutes;
+        sTime.Seconds = seconds;
+
+        if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK)
+        {
+            Error_Handler();
         }
-        HAL_UART_Receive_IT(&huart2, &rx_data, 1);  // Új adat fogadása
+
+        sDate.Year = year - 2000;
+        sDate.Month = month;
+        sDate.Date = day;
+
+        if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK)
+        {
+            Error_Handler();
+        }
+    }
+    else
+    {
+        char error_msg[] = "Invalid UART Data Format\n";
+        HAL_UART_Transmit(&huart2, (uint8_t *)error_msg, strlen(error_msg), HAL_MAX_DELAY);
     }
 }
 
@@ -117,17 +173,20 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_I2C1_Init();
-  MX_TIM2_Init();
+  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
   ssd1306_Init();
-  HAL_UART_Receive_IT(&huart2, &rx_data, 1);
-  HAL_TIM_Base_Start_IT(&htim2);
+  HAL_UART_Receive_IT(&huart2, uart_rx_buffer, UART_BUFFER_SIZE);
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+
+  Display_RTC_Time_Date();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -152,9 +211,10 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = 16;
@@ -216,47 +276,37 @@ static void MX_I2C1_Init(void)
 }
 
 /**
-  * @brief TIM2 Initialization Function
+  * @brief RTC Initialization Function
   * @param None
   * @retval None
   */
-static void MX_TIM2_Init(void)
+static void MX_RTC_Init(void)
 {
 
-  /* USER CODE BEGIN TIM2_Init 0 */
+  /* USER CODE BEGIN RTC_Init 0 */
 
-  /* USER CODE END TIM2_Init 0 */
+  /* USER CODE END RTC_Init 0 */
 
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  /* USER CODE BEGIN RTC_Init 1 */
 
-  /* USER CODE BEGIN TIM2_Init 1 */
+  /* USER CODE END RTC_Init 1 */
 
-  /* USER CODE END TIM2_Init 1 */
-  htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 8399;
-  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 9999;
-  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  /** Initialize RTC Only
+  */
+  hrtc.Instance = RTC;
+  hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
+  hrtc.Init.AsynchPrediv = 127;
+  hrtc.Init.SynchPrediv = 255;
+  hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
+  hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
+  hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
+  if (HAL_RTC_Init(&hrtc) != HAL_OK)
   {
     Error_Handler();
   }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM2_Init 2 */
+  /* USER CODE BEGIN RTC_Init 2 */
 
-  /* USER CODE END TIM2_Init 2 */
+  /* USER CODE END RTC_Init 2 */
 
 }
 
@@ -331,30 +381,6 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-    if (htim->Instance == TIM2) {  // Timer 2 megszakítás
-        // Csak akkor frissítjük a kijelzőt, ha van új adat
-        if (strlen(message) > 0) {
-            // Kijelző paraméterek
-            const int display_width = 128;
-            const int display_height = 64;
-            const int font_width = 16;
-            const int font_height = 26;
-
-            int text_width = strlen(message) * font_width;
-            int text_height = font_height;
-
-            int x_pos = (display_width - text_width) / 2;
-            int y_pos = (display_height - text_height) / 2;
-
-            // OLED frissítése
-            ssd1306_Fill(Black);
-            ssd1306_SetCursor(x_pos, y_pos);
-            ssd1306_WriteString(message, Font_16x26, White);
-            ssd1306_UpdateScreen();
-        }
-    }
-}
 
 /* USER CODE END 4 */
 

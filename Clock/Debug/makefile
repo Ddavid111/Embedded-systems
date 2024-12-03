@@ -60,8 +60,8 @@ all: main-build
 main-build: Clock.elf secondary-outputs
 
 # Tool invocations
-Clock.elf Clock.map: $(OBJS) $(USER_OBJS) D:\Trial\Clock\STM32F401RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "Clock.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"D:\Trial\Clock\STM32F401RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Clock.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Clock.elf Clock.map: $(OBJS) $(USER_OBJS) C:\Users\Laptop\Videos\Trial\Clock\STM32F401RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "Clock.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Laptop\Videos\Trial\Clock\STM32F401RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Clock.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
